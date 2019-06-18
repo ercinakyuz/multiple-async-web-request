@@ -1,9 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
-using System.Net;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace ParalelForEach
@@ -12,71 +9,92 @@ namespace ParalelForEach
     {
         private static readonly List<string> ResultList = new List<string>();
         private static readonly List<Task<string>> Tasks = new List<Task<string>>();
-        static void Main(string[] args)
+
+        private static readonly string[] RequestUrlArray =
         {
-            var watch = Stopwatch.StartNew();
-            Process().Wait();
-            watch.Stop();
-            Console.WriteLine("Totally " + watch.ElapsedMilliseconds + " milliseconds passed!");
+            "http://hurriyet.com.tr",
+            "http://hurriyet.com.tr",
+            "http://hurriyet.com.tr",
+            "http://hurriyet.com.tr",
+            "http://hurriyet.com.tr",
+        };
+        static async Task Main(string[] args)
+        {
+            await HandleProcess(ProcessType.WhenAll, true);
+            await HandleProcess(ProcessType.WaitAll, true);
+            await HandleProcess(ProcessType.Parallel, true);
+
+            await HandleProcess(ProcessType.WhenAll);
+            await HandleProcess(ProcessType.WaitAll);
+            await HandleProcess(ProcessType.Parallel);
+
             Console.ReadKey();
         }
 
-        public static async Task Process()
+        public static async Task HandleProcess(ProcessType processType, bool haveToReadResponse = false)
         {
-            var requestUrlList = new List<string>
-            {
-                "http://hurriyet.com.tr",
-                "http://hurriyet.com.tr",
-                "http://hurriyet.com.tr",
-                "http://hurriyet.com.tr",
-                "http://hurriyet.com.tr",
-
-            };
-            
-            foreach (var requestUrl in requestUrlList)
-            {
-                Tasks.Add(GetGoogle(requestUrl));
-            }
-
-            //Task.WaitAll();
-            await Task.WhenAll(Tasks);
-
-            foreach (var task in Tasks)
-            {
-                ResultList.Add(task.Result);
-
-            }
-
-        }
-        public static async Task<string> GetGoogle(string url)
-        {
-            string responseString = string.Empty;
+            await Task.Delay(TimeSpan.FromSeconds(1));
             var watch = Stopwatch.StartNew();
-            try
+            if (processType == ProcessType.Parallel)
             {
-                HttpWebRequest request = WebRequest.CreateHttp(new Uri(url));
+                ProcessParallel(haveToReadResponse);
+            }
+            else
+            {
+                await Process(processType, haveToReadResponse);
+            }
 
-                request.Method = "GET";
-                request.Timeout = 10000;
+            watch.Stop();
+            Console.WriteLine($"Process {processType}: Totally {watch.ElapsedMilliseconds} milliseconds passed!");
+            Console.WriteLine("----------------------------------------------------------------");
 
-                HttpWebResponse response = (HttpWebResponse)await request.GetResponseAsync();
-                using (Stream stream = response.GetResponseStream())
+        }
+
+        public static void ProcessParallel(bool haveToReadResponse)
+        {
+            Parallel.ForEach(RequestUrlArray, (requestUrl) =>
+            {
+                if (haveToReadResponse)
                 {
-                    var reader = new StreamReader(stream ?? throw new InvalidOperationException("Response stream is null!"), Encoding.UTF8);
-                    responseString = reader.ReadToEnd();
+                    ResultList.Add(HttpRequestHandler<string>.Get(requestUrl));
                 }
-                watch.Stop();
-                Console.WriteLine("Resolved after " + watch.ElapsedMilliseconds + " milliseconds passed!");
-            }
-            catch (Exception e)
+                else
+                {
+                    HttpRequestHandler<string>.Get(requestUrl);
+                }
+
+            });
+
+        }
+
+        public static async Task Process(ProcessType processType, bool haveToReadResponse)
+        {
+
+            Parallel.ForEach(RequestUrlArray, (requestUrl) =>
             {
-                watch.Stop();
-                Console.WriteLine("After " + watch.ElapsedMilliseconds + " milliseconds request timeout!");
+                Tasks.Add(HttpRequestHandler<string>.GetAsync(requestUrl));
+            });
+
+            switch (processType)
+            {
+                case ProcessType.WaitAll:
+                    Task.WaitAll();
+                    break;
+                case ProcessType.WhenAll:
+                    await Task.WhenAll();
+                    break;
             }
 
-            return responseString;
+            if (haveToReadResponse)
+            {
+                Parallel.ForEach(Tasks, (task) =>
+                {
+                    ResultList.Add(task.Result);
+                });
+            }
 
 
         }
+
     }
 }
